@@ -5,7 +5,8 @@ import time
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 print(f"[INFO] Using {device} device")
 
-#torch.set_float32_matmul_precision('high')
+# Acceleration
+torch.set_float32_matmul_precision('high')
 
 class DataCollator:
     def __init__(self, path_to_data, ratio_train):
@@ -49,6 +50,7 @@ class DataCollator:
         x = (batch[:-1]).view(batch_size, context_size)
         y = (batch[1:]).view(batch_size, context_size)
         self.position += batch_size * context_size
+        x, y = x.to(device), y.to(device)
         return x, y
 
 class MaskedSingleHeadAttention(torch.nn.Module):
@@ -178,7 +180,7 @@ class NaiveLangModel(torch.nn.Module):
             inputs = torch.cat((inputs, pred_next), dim=1)
         return inputs
 
-def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_decay):
+def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_decay, need_compile):
     @torch.no_grad()
     def calc_loss(n_eval, batch_size):
         rslt = {}
@@ -187,15 +189,16 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
             losses = torch.zeros(n_eval)
             for i in range(n_eval):
                 x, y = dc.collate_data(c, batch_size, model.context_size)
-                #with torch.autocast(device_type=device, dtype=torch.bfloat16):
-                    #    _, loss = model(x, y)
-                _, loss = model(x, y)
+                # Acceleration
+                with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                    _, loss = model(x, y)
+                #_, loss = model(x, y)
                 losses[i] = loss.item()
             rslt[c] = losses.mean()
         model.train()
         return rslt
 
-    def prepare_optimizer(learning_rate, weight_decay):
+    def prepare_optimizer(learning_rate, weight_decay, need_compile):
         decay = set()
         no_decay = set()
         
@@ -207,8 +210,14 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
                 else:
                     decay.add(full_name)
 
+        # print("[decay]: ", decay)
+        # print("[no_decay]: ", no_decay)
+
         if model.use_tie:
-            no_decay.remove("lm_head.weight")
+            if need_compile:
+                no_decay.remove("_orig_mod.lm_head.weight")
+            else:
+                no_decay.remove("lm_head.weight")
 
         param_dict = {pn: p for pn, p in model.named_parameters()}
         optim_groups = [
@@ -221,7 +230,7 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
     
     # optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     # Apply weight decay
-    optimizer = prepare_optimizer(learning_rate=learning_rate, weight_decay=weight_decay)
+    optimizer = prepare_optimizer(learning_rate=learning_rate, weight_decay=weight_decay, need_compile=need_compile)
 
     for step in range(steps):
         if step % eval_interval == 0 or step == steps - 1:
@@ -231,9 +240,10 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
         t0 = time.time()
         x, y = dc.collate_data('train', batch_size, model.context_size)
         optimizer.zero_grad(set_to_none=True)
-        #with torch.autocast(device_type=device, dtype=torch.bfloat16):
-        #    _, loss = model(x, y)
-        _, loss = model(x, y)
+        # Acceleration
+        with torch.autocast(device_type=device, dtype=torch.bfloat16):
+            _, loss = model(x, y)
+        #_, loss = model(x, y)
         loss.backward()
         optimizer.step()
         if "cuda" in device:
@@ -241,7 +251,8 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
         t1 = time.time()
         dt = t1 - t0
         throughput = (batch_size * model.context_size) / dt
-        print(f"[step {step}] loss {loss.item():.4f} elapsed {dt*1000:.2f}ms {throughput} tok/s")
+        if step % eval_interval == 0 or step == steps - 1:
+            print(f"  elapsed {dt*1000:.2f}ms {throughput:.2f} tok/s")
 
 dc = DataCollator('./Tolkien.txt', 0.9)
 
@@ -250,34 +261,40 @@ print("[INFO] Training set tokens:", len(dc.train_data))
 print("[INFO] Vocab size:", dc.n_vocab)
 
 # Hyperparam
+#vocab_size=dc.n_vocab
+# Acceleration
+vocab_size=50304
 n_layer = 4
 #n_head = 4
 n_head = 6
 # n_embedding = 256
-n_embedding = 192
+n_embedding = 384
 dropout_p = 0.2
-context_size=128 # context length for prediction
+context_size=256 # context length for prediction
 
-steps = 5000
+steps = 2000
 eval_interval = 100 # evaluate every N steps
 # batch_size = 128
 batch_size = 64
 n_eval = 100       # evaluate n_eval times then calculate the mean
-#lr = 3e-4
-lr = 1e-3
+lr = 3e-4
+#lr = 1e-3
 weight_decay = 0.01
+need_compile = True  # sudo apt install python3.9-dev
 
 print(f"[INFO] 1 epoch == {len(dc.train_data) // (batch_size * context_size)} batches")
 
 # params: vocab_size * n_embedding * 2 + context_size * n_embedding + 12 * n_embedding ^ 2
-model = NaiveLangModel(vocab_size=dc.n_vocab, n_layer=n_layer, n_head=n_head, context_size=context_size, n_embedding=n_embedding, dropout_p=dropout_p, use_tie=True)
+model = NaiveLangModel(vocab_size=vocab_size, n_layer=n_layer, n_head=n_head, context_size=context_size, n_embedding=n_embedding, dropout_p=dropout_p, use_tie=True)
 model = model.to(device)
-# model = torch.compile(model)
+# Acceleration
+if need_compile:
+    model = torch.compile(model)
 print("[INFO] Model params:", sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
 
 # model.load_state_dict(torch.load("model.pth", weights_only=True))
 
-train_model(learning_rate=lr, batch_size=batch_size, steps=steps, eval_interval=eval_interval, n_eval=n_eval, weight_decay=weight_decay)
+train_model(learning_rate=lr, batch_size=batch_size, steps=steps, eval_interval=eval_interval, n_eval=n_eval, weight_decay=weight_decay, need_compile=need_compile)
 
 prompt = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(dc.fn_decode(model.generate(prompt, max_gen=2000)[0].tolist()))
