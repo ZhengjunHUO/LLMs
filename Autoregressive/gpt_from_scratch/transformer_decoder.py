@@ -5,6 +5,8 @@ import time
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 print(f"[INFO] Using {device} device")
 
+#torch.set_float32_matmul_precision('high')
+
 class DataCollator:
     def __init__(self, path_to_data, ratio_train):
         with open(path_to_data, mode='r', encoding='utf-8', errors='replace') as f:
@@ -185,6 +187,8 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
             losses = torch.zeros(n_eval)
             for i in range(n_eval):
                 x, y = dc.collate_data(c, batch_size, model.context_size)
+                #with torch.autocast(device_type=device, dtype=torch.bfloat16):
+                    #    _, loss = model(x, y)
                 _, loss = model(x, y)
                 losses[i] = loss.item()
             rslt[c] = losses.mean()
@@ -227,14 +231,17 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
         t0 = time.time()
         x, y = dc.collate_data('train', batch_size, model.context_size)
         optimizer.zero_grad(set_to_none=True)
+        #with torch.autocast(device_type=device, dtype=torch.bfloat16):
+        #    _, loss = model(x, y)
         _, loss = model(x, y)
         loss.backward()
         optimizer.step()
         if "cuda" in device:
             torch.cuda.synchronize()
         t1 = time.time()
-        dt = (t1-t0)*1000
-        print(f"[step {step}] loss {loss.item():.4f} elapsed {dt:.2f}ms")
+        dt = t1 - t0
+        throughput = (batch_size * model.context_size) / dt
+        print(f"[step {step}] loss {loss.item():.4f} elapsed {dt*1000:.2f}ms {throughput} tok/s")
 
 dc = DataCollator('./Tolkien.txt', 0.9)
 
@@ -265,6 +272,7 @@ print(f"[INFO] 1 epoch == {len(dc.train_data) // (batch_size * context_size)} ba
 # params: vocab_size * n_embedding * 2 + context_size * n_embedding + 12 * n_embedding ^ 2
 model = NaiveLangModel(vocab_size=dc.n_vocab, n_layer=n_layer, n_head=n_head, context_size=context_size, n_embedding=n_embedding, dropout_p=dropout_p, use_tie=True)
 model = model.to(device)
+# model = torch.compile(model)
 print("[INFO] Model params:", sum(p.numel() for p in model.parameters())/1e6, 'M parameters')
 
 # model.load_state_dict(torch.load("model.pth", weights_only=True))
