@@ -1,5 +1,6 @@
 import torch
 import tiktoken
+import time
 
 device = torch.accelerator.current_accelerator().type if torch.accelerator.is_available() else "cpu"
 print(f"[INFO] Using {device} device")
@@ -29,6 +30,7 @@ class DataCollator:
         n = int(len(data) * ratio_train)
         self.train_data = data[:n]
         self.eval_data = data[n:]
+        self.position = 0
 
     def collate_data(self, category, batch_size, context_size):
         data = self.train_data if category == 'train' else self.eval_data
@@ -36,6 +38,15 @@ class DataCollator:
         x = torch.stack([data[idx:idx+context_size] for idx in batch_start_idx])
         y = torch.stack([data[idx+1:idx+context_size+1] for idx in batch_start_idx])
         x, y = x.to(device), y.to(device)
+        return x, y
+
+    def next(self, batch_size, context_size):
+        if self.position + batch_size * context_size + 1 > len(self.train_data):
+            self.position = 0
+        batch = self.train_data[self.position: self.position + batch_size * context_size + 1]
+        x = (batch[:-1]).view(batch_size, context_size)
+        y = (batch[1:]).view(batch_size, context_size)
+        self.position += batch_size * context_size
         return x, y
 
 class MaskedSingleHeadAttention(torch.nn.Module):
@@ -219,14 +230,16 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
         _, loss = model(x, y)
         loss.backward()
         optimizer.step()
-        torch.cuda.synchronize()
+        if "cuda" in device:
+            torch.cuda.synchronize()
         t1 = time.time()
-        dt = (t2-t1)*1000
+        dt = (t1-t0)*1000
         print(f"[step {step}] loss {loss.item():.4f} elapsed {dt:.2f}ms")
 
-
 dc = DataCollator('./Tolkien.txt', 0.9)
+
 print("[INFO] Read in corpora:", len(dc.content))
+print("[INFO] Training set tokens:", len(dc.train_data))
 print("[INFO] Vocab size:", dc.n_vocab)
 
 # Hyperparam
@@ -246,6 +259,8 @@ n_eval = 100       # evaluate n_eval times then calculate the mean
 #lr = 3e-4
 lr = 1e-3
 weight_decay = 0.01
+
+print(f"[INFO] 1 epoch == {len(dc.train_data) // (batch_size * context_size)} batches")
 
 # params: vocab_size * n_embedding * 2 + context_size * n_embedding + 12 * n_embedding ^ 2
 model = NaiveLangModel(vocab_size=dc.n_vocab, n_layer=n_layer, n_head=n_head, context_size=context_size, n_embedding=n_embedding, dropout_p=dropout_p, use_tie=True)
