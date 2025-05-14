@@ -224,10 +224,28 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
             {"params": [param_dict[pn] for pn in sorted(list(decay))], "weight_decay": weight_decay},
             {"params": [param_dict[pn] for pn in sorted(list(no_decay))], "weight_decay": 0.0},
         ]
-    
-        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate)
+
+        fused_exist = 'fused' in inspect.signature(torch.optim.AdamW).parameters
+        fused = fused_exist and device_type == "cuda"
+        print(f"[INFO] config AdamW with using fused : {fused}")
+        optimizer = torch.optim.AdamW(optim_groups, lr=learning_rate, betas=(0.9, 0.95), eps=1e-8, fused=fused)
         return optimizer
-    
+
+    def update_lr(step):
+        max_lr = 6e-4
+        min_lr = max_lr * 0.1
+        warmup_steps = 100
+        max_steps = 1000
+
+        if step < warmup_steps:
+            return max_lr * (step+1) / warmup_steps
+        if step > max_steps:
+            return min_lr
+        decay_ratio = (step - warmup_steps) / (max_steps - warmup_steps)
+        assert 0 <= decay_ratio <= 1
+        coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio)) # 1 -> 0
+        return min_lr + coeff * (max_lr - min_lr)
+
     # optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     # Apply weight decay
     optimizer = prepare_optimizer(learning_rate=learning_rate, weight_decay=weight_decay, need_compile=need_compile)
@@ -235,7 +253,7 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
     for step in range(steps):
         if step % eval_interval == 0 or step == steps - 1:
             losses = calc_loss(n_eval, batch_size)
-            print(f"[step {step}] train loss {losses['train']:.4f}, eval loss {losses['eval']:.4f}")
+            print(f"[step {step:4d}] train loss {losses['train']:.4f}, eval loss {losses['eval']:.4f}")
 
         t0 = time.time()
         x, y = dc.collate_data('train', batch_size, model.context_size)
@@ -245,6 +263,13 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
             _, loss = model(x, y)
         #_, loss = model(x, y)
         loss.backward()
+
+        norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+
+        lr = update_lr(step)
+        for param_grp in optimizer.param_groups:
+            param_grp['lr'] = lr
+
         optimizer.step()
         if "cuda" in device:
             torch.cuda.synchronize()
@@ -252,7 +277,7 @@ def train_model(learning_rate, batch_size, steps, eval_interval, n_eval, weight_
         dt = t1 - t0
         throughput = (batch_size * model.context_size) / dt
         if step % eval_interval == 0 or step == steps - 1:
-            print(f"  elapsed {dt*1000:.2f}ms {throughput:.2f} tok/s")
+            print(f"    elapsed {dt*1000:.2f}ms {throughput:.2f} tok/s norm: {norm:.4f} lr: {lr:.4e}")
 
 dc = DataCollator('./Tolkien.txt', 0.9)
 
@@ -299,5 +324,5 @@ train_model(learning_rate=lr, batch_size=batch_size, steps=steps, eval_interval=
 prompt = torch.zeros((1, 1), dtype=torch.long, device=device)
 print(dc.fn_decode(model.generate(prompt, max_gen=2000)[0].tolist()))
 
-# torch.save(model.state_dict(), "model.pth")
-# print("[INFO] Model saved.")
+torch.save(model.state_dict(), "model.pth")
+print("[INFO] Model saved.")
