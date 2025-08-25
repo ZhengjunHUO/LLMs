@@ -1,0 +1,24 @@
+GptOssForCausalLM(
+  (model): GptOssModel(
+    (embed_tokens): Embedding(201088, 2880, padding_idx=199999)
+    (layers): ModuleList(
+      (0-23): 24 x GptOssDecoderLayer(
+        (self_attn): GptOssAttention(
+          (q_proj): Linear(in_features=2880, out_features=4096, bias=True)
+          (k_proj): Linear(in_features=2880, out_features=512, bias=True)
+          (v_proj): Linear(in_features=2880, out_features=512, bias=True)
+          (o_proj): Linear(in_features=4096, out_features=2880, bias=True)
+        )
+        (mlp): GptOssMLP(
+          (router): GptOssTopKRouter()
+          (experts): GptOssExperts()
+        )
+        (input_layernorm): GptOssRMSNorm((2880,), eps=1e-05)
+        (post_attention_layernorm): GptOssRMSNorm((2880,), eps=1e-05)
+      )
+    )
+    (norm): GptOssRMSNorm((2880,), eps=1e-05)
+    (rotary_emb): GptOssRotaryEmbedding()
+  )
+  (lm_head): Linear(in_features=2880, out_features=201088, bias=False)
+)
