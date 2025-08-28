@@ -33,7 +33,6 @@ def save_current_conversation():
             "created_at": datetime.now().isoformat()
         }
         
-        # Persist to disk
         save_conversations()
 
 def initialize_session_state():
@@ -51,6 +50,8 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+st.header("Chat Assistant")
+
 with st.sidebar:
     st.header("Chat History")
     if st.button("+ New Chat", use_container_width=True):
@@ -59,7 +60,7 @@ with st.sidebar:
         st.session_state.messages = []
         st.rerun()
     
-    # Display chat history
+    # Display chat history in side bar
     for chat_id, chat_data in st.session_state.conversations.items():
         chat_title = chat_data.get("title", "New Chat")
         if st.button(
@@ -72,13 +73,18 @@ with st.sidebar:
             st.session_state.messages = chat_data.get("messages", [])
             st.rerun()
 
-st.header("Chat Assistant")
-
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
 
 if prompt := st.chat_input("Type your message..."):
+    # When the app is up for the the first time, the id is None
+    if st.session_state.current_chat_id is None:
+        st.session_state.current_chat_id = str(uuid.uuid4())
+
+    with st.chat_message("user"):
+        st.write(prompt)
+
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     with st.chat_message("assistant"):
@@ -86,7 +92,14 @@ if prompt := st.chat_input("Type your message..."):
             #response = process_with_langgraph(prompt)
             response = "bla bla bla"
             st.write(response)
-    
+
+        # placeholder = st.empty()
+        # response = ""
+        # for chunk in process_with_langgraph(prompt):  # streaming
+        #     response += chunk
+        #     placeholder.markdown(response + "▌")
+        # placeholder.markdown(response)
+
     st.session_state.messages.append({"role": "assistant", "content": response})
-    
+
     save_current_conversation()
