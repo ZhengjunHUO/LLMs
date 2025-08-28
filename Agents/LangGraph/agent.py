@@ -73,6 +73,14 @@ with st.sidebar:
             st.session_state.messages = chat_data.get("messages", [])
             st.rerun()
 
+if st.sidebar.button("🗑️ Delete Chat", disabled=not st.session_state.current_chat_id):
+    if st.session_state.current_chat_id in st.session_state.conversations:
+        del st.session_state.conversations[st.session_state.current_chat_id]
+        st.session_state.current_chat_id = None
+        st.session_state.messages = []
+        save_conversations()
+        st.rerun()
+
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.write(message["content"])
