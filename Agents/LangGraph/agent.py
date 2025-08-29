@@ -1,4 +1,6 @@
 import streamlit as st
+import asyncio
+from typing import AsyncGenerator
 import json
 import os
 import uuid
@@ -41,6 +43,87 @@ def initialize_session_state():
         st.session_state.current_chat_id = None
         st.session_state.messages = []
         st.session_state.initialized = True
+
+class ChatBot:
+    def __init__(self):
+        self.graph = self._create_graph()
+
+    def _create_graph(self):
+        """Create the LangGraph instance"""
+        from typing import Annotated
+        from typing_extensions import TypedDict
+        from langgraph.graph import StateGraph, START, END
+        from langgraph.graph.message import add_messages
+        from langgraph.prebuilt import ToolNode, tools_condition
+        from langchain_ollama import ChatOllama
+        from langchain_tavily import TavilySearch
+
+        class State(TypedDict):
+            messages: Annotated[list, add_messages]
+
+        def chatbot(state: State):
+            return { "messages": [llm_with_tools.invoke(state["messages"])]}
+
+        llm = ChatOllama(model="gpt-oss:20b", temperature=0)
+        search_tool = TavilySearch(
+            max_results=5,
+            topic="general",
+        )
+        tools = [search_tool]
+
+        llm_with_tools = llm.bind_tools(tools)
+        tools_node = ToolNode(tools=tools)
+
+        builder = StateGraph(State)
+        builder.add_node("chatbot", chatbot)
+        builder.add_node("tools", tools_node)
+        builder.add_edge(START, "chatbot")
+        builder.add_conditional_edges(
+            "chatbot",
+            tools_condition,
+        )
+        builder.add_edge("tools", "chatbot")
+        return builder.compile()
+
+    async def async_run(self, question: str) -> AsyncGenerator[str, None]:
+        async for event in self.graph.astream({
+            "messages": [
+                {"role": "user", "content": question}
+            ]
+        }):
+            print(f"[DEBUG] Event: {event}")
+            if "chatbot" in event:
+                node_output = event["chatbot"]
+
+                if "messages" in node_output and node_output["messages"]:
+                    latest_message = node_output["messages"][-1]
+
+                    if hasattr(latest_message, 'content') and latest_message.content:
+                        yield latest_message.content
+
+@st.cache_resource
+def get_chatbot():
+    """Create and cache the chatbot instance"""
+    return ChatBot()
+
+# def process_with_langgraph(user_input):
+#     chatbot = get_chatbot()
+#     return chatbot.async_run(user_input)
+
+def stream_to_ui(user_input: str):
+    async def collect_stream():
+        chatbot = get_chatbot()
+        full_response = ""
+        placeholder = st.empty()
+
+        async for chunk in chatbot.async_run(user_input):
+            full_response += chunk
+            placeholder.markdown(full_response + "▌")
+
+        placeholder.markdown(full_response)
+        return full_response
+
+    return asyncio.run(collect_stream())
 
 initialize_session_state()
 
@@ -96,10 +179,10 @@ if prompt := st.chat_input("Type your message..."):
     st.session_state.messages.append({"role": "user", "content": prompt})
     
     with st.chat_message("assistant"):
-        with st.spinner("Thinking..."):
-            #response = process_with_langgraph(prompt)
-            response = "bla bla bla"
-            st.write(response)
+        # with st.spinner("Thinking..."):
+        #     #response = process_with_langgraph(prompt)
+        #     response = "bla bla bla"
+        #     st.write(response)
 
         # placeholder = st.empty()
         # response = ""
@@ -107,6 +190,8 @@ if prompt := st.chat_input("Type your message..."):
         #     response += chunk
         #     placeholder.markdown(response + "▌")
         # placeholder.markdown(response)
+
+        response = stream_to_ui(prompt)
 
     st.session_state.messages.append({"role": "assistant", "content": response})
 
