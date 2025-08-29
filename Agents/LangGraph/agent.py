@@ -92,6 +92,7 @@ class ChatBot:
             ]
         }):
             print(f"[DEBUG] Event: {event}")
+            # {'chatbot': {'messages': [AIMessage(content='...', additional_kwargs={}, response_metadata={'model': 'gpt-oss:20b', 'created_at': '2025-08-29T10:34:54.83054935Z', 'done': True, 'done_reason': 'stop', 'total_duration': 5755868475, 'load_duration': 3876618943, 'prompt_eval_count': 1338, 'prompt_eval_duration': 1104694397, 'eval_count': 85, 'eval_duration': 769915896, 'model_name': 'gpt-oss:20b'}, id='run--8f10d57d-7aee-49c7-9de8-a2f66da4583b-0', usage_metadata={'input_tokens': 1338, 'output_tokens': 85, 'total_tokens': 1423})]}}
             if "chatbot" in event:
                 node_output = event["chatbot"]
 
@@ -99,7 +100,16 @@ class ChatBot:
                     latest_message = node_output["messages"][-1]
 
                     if hasattr(latest_message, 'content') and latest_message.content:
-                        yield latest_message.content
+                        # yield latest_message.content
+
+                        content = latest_message.content
+                        sentences = content.split('. ')
+                        for i, sentence in enumerate(sentences):
+                            if i < len(sentences) - 1:
+                                yield sentence + ". "
+                            else:
+                                yield sentence
+                            await asyncio.sleep(0.1)
 
 @st.cache_resource
 def get_chatbot():
