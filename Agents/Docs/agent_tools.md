@@ -1,4 +1,4 @@
-# 🔍 Information Retrieval | Database & Data Management Tools >
+# 🔍 Information Retrieval | Database & Data Management Tools
 - Web Search / Scraper.
 - Vector DB / RAG query → Query embeddings from a database (Pinecone, Weaviate, Milvus, Qdrant, etc.) for knowledge grounding.
 - Database connectors → SQL / NoSQL query execution (Postgres, Mongo, SQLite).
@@ -10,12 +10,12 @@
   - Data Visualization: Generate charts, graphs (matplotlib, plotly)
   - Statistical Analysis: Pandas operations, statistical tests
 
-# 🤖 ML/AI Tools >
+# 🤖 ML/AI Tools
 - Image Processing: Generate, edit, analyze images (Stable Diffusion, DALL-E, vision models).
 - Vision tools → OCR (Tesseract), object detection.
 - Voice/Speech: Text-to-speech, speech recognition: TTS (gTTS, ElevenLabs), STT (Whisper).
 
-# 🌐 External API Integration Tools (RestAPI | GraphQL)>
+# 🌐 External API Integration Tools (RestAPI | GraphQL)
 - Code Repository API: GitHub/GitLab
 - Communication APIs: Email, SMS, Slack, Discord, Telegram.
 - Utility APIs: Calendar, Weather,  Maps/Geo, Financial data(Yahoo Finance, Alpha Vantage).
@@ -23,7 +23,7 @@
 - Productivity APIs: Google Drive, Notion, Obsidian, Airtable, Jira.
 - Business APIs: Shopify, HubSpot, Salesforce.
 
-# ⚙️ System & Developer Utilities >
+# ⚙️ System & Developer Utilities
 - Shell Commands: Run system commands (with proper security).
 - Code execution tools: Python REPL, Rust, JS sandboxes.
 - Code Analysis: Parse and analyze codebases
