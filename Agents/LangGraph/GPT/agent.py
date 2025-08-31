@@ -156,11 +156,9 @@ class ChatBot:
         builder.add_edge("tools", "chatbot")
         return builder.compile()
 
-    async def async_run(self, question: str) -> AsyncGenerator[str, None]:
+    async def async_run(self, messages: list) -> AsyncGenerator[str, None]:
         async for event in self.graph.astream({
-            "messages": [
-                {"role": "user", "content": question}
-            ]
+            "messages": messages
         }):
             print(f"[DEBUG] Event: {event}")
             # {'chatbot': {'messages': [AIMessage(content='...', additional_kwargs={}, response_metadata={'model': 'gpt-oss:20b', 'created_at': '2025-08-29T10:34:54.83054935Z', 'done': True, 'done_reason': 'stop', 'total_duration': 5755868475, 'load_duration': 3876618943, 'prompt_eval_count': 1338, 'prompt_eval_duration': 1104694397, 'eval_count': 85, 'eval_duration': 769915896, 'model_name': 'gpt-oss:20b'}, id='run--8f10d57d-7aee-49c7-9de8-a2f66da4583b-0', usage_metadata={'input_tokens': 1338, 'output_tokens': 85, 'total_tokens': 1423})]}}
@@ -187,13 +185,13 @@ def get_chatbot():
     """Create and cache the chatbot instance"""
     return ChatBot()
 
-def stream_to_ui(user_input: str):
+def stream_to_ui():
     async def collect_stream():
         chatbot = get_chatbot()
         full_response = ""
         placeholder = st.empty()
 
-        async for chunk in chatbot.async_run(user_input):
+        async for chunk in chatbot.async_run(st.session_state.messages):
             full_response += chunk
             placeholder.markdown(full_response + "▌")
 
@@ -268,7 +266,7 @@ if prompt := st.chat_input("Type your message..."):
         #     placeholder.markdown(response + "▌")
         # placeholder.markdown(response)
 
-        response = stream_to_ui(prompt)
+        response = stream_to_ui()
 
     st.session_state.messages.append({"role": "assistant", "content": response})
 
