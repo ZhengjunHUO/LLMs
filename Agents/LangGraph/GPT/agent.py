@@ -55,8 +55,11 @@ class ChatBot:
         from langgraph.graph import StateGraph, START, END
         from langgraph.graph.message import add_messages
         from langgraph.prebuilt import ToolNode, tools_condition
+        from langchain.tools import Tool
         from langchain_ollama import ChatOllama
         from langchain_tavily import TavilySearch
+        import subprocess
+        import shlex
 
         class State(TypedDict):
             messages: Annotated[list, add_messages]
@@ -64,13 +67,81 @@ class ChatBot:
         def chatbot(state: State):
             return { "messages": [llm_with_tools.invoke(state["messages"])]}
 
-        llm = ChatOllama(model="gpt-oss:20b", temperature=0)
+        ALLOWED_COMMANDS = {
+            'pwd', 'ls', 'cat', 'echo', 'cp', 'mv', 'mkdir', 'touch', 'grep', 'find',
+            'head', 'tail', 'wc', 'sort', 'date', 'curl', 'wget', 'du', 'df', 'python',
+            'uname', 'ps', "free", "nvidia-smi"
+        }
+
+        def is_command_allowed(command: str) -> bool:
+            cmd_parts = shlex.split(command)
+            base_command = cmd_parts[0].split('/')[-1]  # Get command name
+            return base_command in ALLOWED_COMMANDS
+
+        def shell_command_tool(command: str) -> dict:
+            """
+            Executes a Linux shell command within a secure, isolated workspace.
+
+            This tool is essential for tasks involving file system inspection,
+            data manipulation, and system interaction. Use it when you need to:
+            - List, read, or search for files (e.g., 'ls -l', 'cat my_file.txt', 'grep "error" logs/').
+            - Check system status or network information (e.g., 'df -h', 'curl ifconfig.me').
+            - Perform simple data processing with command-line tools like 'awk' or 'sed'.
+
+            The command runs in the predefined workspace: /safe/agent/workdir.
+            Do NOT use this for long-running processes or interactive sessions like 'ssh' or 'vim'.
+            """
+            if not is_command_allowed(command):
+                return {"error": f"Command {command} is not allowed"}
+
+            try:
+                full_command = f"sudo -u agentexecutor /bin/bash -c 'cd /safe/agent/workdir && {command}'"
+                print(f"[DEBUG] full_command: {full_command}")
+
+                result = subprocess.run(
+                    full_command,
+                    shell=True,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    # cwd="/safe/agent/workdir",
+                    # cwd=working_dir,
+                    check=True,
+                )
+
+                return {
+                    "stdout": result.stdout,
+                    "stderr": result.stderr,
+                    "return_code": result.returncode,
+                    "success": result.returncode == 0
+                }
+            except subprocess.TimeoutExpired:
+                return {"error": "Command timed out"}
+            except subprocess.CalledProcessError as e:
+                return f"Error: Command failed with exit code {e.returncode}.\nSTDOUT:\n{e.stdout}\nSTDERR:\n{e.stderr}"
+            except Exception as e:
+                return {"error": f"Execution failed: {str(e)}"}
+
+        # TODO: fallback to ddg ?
         search_tool = TavilySearch(
             max_results=5,
             topic="general",
         )
-        tools = [search_tool]
+        shell_tool = Tool(
+            name="shell_command",
+            description="""Executes a Linux shell command within a secure, isolated workspace.
+            This tool is essential for tasks involving file system inspection,
+            data manipulation, and system interaction. Use it when you need to:
+            - List, read, or search for files (e.g., 'ls -l', 'cat my_file.txt', 'grep "error" logs/').
+            - Check system status or network information (e.g., 'df -h', 'curl ifconfig.me').
+            - Perform simple data processing with command-line tools like 'awk' or 'sed'.
+            The command runs in the predefined workspace: /safe/agent/workdir.
+            Do NOT use this for long-running processes or interactive sessions like 'ssh' or 'vim'.""",
+            func=shell_command_tool
+        )
+        tools = [search_tool, shell_tool]
 
+        llm = ChatOllama(model="gpt-oss:20b", temperature=0)
         llm_with_tools = llm.bind_tools(tools)
         tools_node = ToolNode(tools=tools)
 
@@ -115,10 +186,6 @@ class ChatBot:
 def get_chatbot():
     """Create and cache the chatbot instance"""
     return ChatBot()
-
-# def process_with_langgraph(user_input):
-#     chatbot = get_chatbot()
-#     return chatbot.async_run(user_input)
 
 def stream_to_ui(user_input: str):
     async def collect_stream():
