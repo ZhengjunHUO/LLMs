@@ -1,6 +1,5 @@
 import asyncpg
-import numpy as np
-from typing import List, Dict, Any, Optional
+from typing import Dict, Any, Optional
 from langchain_core.tools import BaseTool
 from langchain_core.embeddings import Embeddings
 from langchain_ollama import OllamaEmbeddings
