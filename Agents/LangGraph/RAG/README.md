@@ -1,6 +1,6 @@
 ## Prerequis pgvector
 ```sh
-docker run --name pgvector -p 5432:5432 -e POSTGRES_PASSWORD=admin -d ankane/pgvector
+docker run --name pgvector -p 5432:5432 -e POSTGRES_PASSWORD=admin -e POSTGRES_DB=langgraph -d ankane/pgvector
 psql -h 127.0.0.1 -U postgres -d langgraph
 ```
 ### for nomic-embed-text:v1.5, dimension == 768
