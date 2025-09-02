@@ -50,21 +50,136 @@ class ChatBot:
 
     def _create_graph(self):
         """Create the LangGraph instance"""
-        from typing import Annotated
+        from typing import Annotated, Dict, Any, Optional
         from typing_extensions import TypedDict
         from langgraph.graph import StateGraph, START, END
         from langgraph.graph.message import add_messages
         from langgraph.prebuilt import ToolNode, tools_condition
         from langchain.tools import Tool
-        from langchain_ollama import ChatOllama
+        from langchain_ollama import ChatOllama, OllamaEmbeddings
         from langchain_tavily import TavilySearch
+        from langchain_core.embeddings import Embeddings
+        from langchain_core.tools import BaseTool
+        from pydantic import Field
         import subprocess
         import shlex
+        import json
+        import asyncpg
+        import asyncio
 
         class State(TypedDict):
             messages: Annotated[list, add_messages]
+            context: Optional[str]
+
+        class VectorSearchTool(BaseTool):
+            """Custom tool to search vector database"""
+            name: str = "vector_search"
+            description: str = "Search for relevant documents using semantic similarity. Use this when you need to find information from the knowledge base."
+
+            # Declare fields with Pydantic
+            db_config: Dict[str, Any] = Field(...)
+            embeddings_model: Embeddings = Field(...)
+
+            def __init__(self, db_config: Dict[str, Any], embeddings_model: Embeddings):
+                super().__init__(
+                    db_config = db_config,
+                    embeddings_model = embeddings_model
+                )
+
+            async def _arun(self, query: str, top_k: int = 5, threshold: float = 0.7) -> str:
+                """Async implementation for vector search"""
+                try:
+                    # Generate embedding for the query
+                    query_embedding = await self.embeddings_model.aembed_query(query)
+                    query_embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+
+                    # Connect to PostgreSQL
+                    conn = await asyncpg.connect(**self.db_config)
+
+                    # Perform vector similarity search
+                    search_query = """
+                    SELECT
+                        id,
+                        content,
+                        metadata,
+                        1 - (embedding <=> $1::vector) as similarity_score
+                    FROM documents
+                    WHERE 1 - (embedding <=> $1::vector) > $2
+                    ORDER BY embedding <=> $1::vector
+                    LIMIT $3;
+                    """
+
+                    results = await conn.fetch(
+                        search_query,
+                        query_embedding_str,
+                        threshold,
+                        top_k
+                    )
+
+                    await conn.close()
+
+                    if not results:
+                        return "No relevant documents found."
+
+                    # Format results
+                    formatted_results = []
+                    for row in results:
+                        formatted_results.append({
+                            "id": row["id"],
+                            "content": row["content"],
+                            "metadata": json.loads(row["metadata"]) if row["metadata"] else {},
+                            "similarity_score": float(row["similarity_score"])
+                        })
+
+                    # Create a readable summary
+                    context = "\n\n".join([
+                        f"Document {i+1} (Score: {result['similarity_score']:.3f}):\n{result['content']}"
+                        for i, result in enumerate(formatted_results)
+                    ])
+
+                    print(f"[DEBUG] Get context: {context}")
+
+                    return context
+
+                except Exception as e:
+                    return f"Error searching vector database: {str(e)}"
+
+            def _run(self, query: str, top_k: int = 5, threshold: float = 0.7) -> str:
+                return asyncio.run(self._arun(query, top_k, threshold))
+
+        async def search_knowledge_base(state: State):
+            """Node that searches the vector database"""
+            last_message = state["messages"][-1]
+
+            db_config = {
+                "host": "localhost",
+                "port": 5432,
+                "database": "langgraph",
+                "user": "postgres",
+                "password": "admin"
+            }
+
+            embeddings = OllamaEmbeddings(model="nomic-embed-text:v1.5")
+            vector_tool = VectorSearchTool(db_config, embeddings)
+
+            # Search for relevant context
+            context = await vector_tool._arun(last_message.content)
+
+            return {"context": context}
 
         def chatbot(state: State):
+            last_message = state["messages"][-1]
+            context = state.get("context", "")
+            if context and context != "No relevant documents found.":
+                prompt = f"""Based on the knowledge base search, please answer the user's question.
+
+Context:
+{context}
+
+Question: {last_message.content}
+
+Please provide a helpful and accurate answer based on the context provided."""
+                state["messages"][-1].content = prompt
             return { "messages": [llm_with_tools.invoke(state["messages"])]}
 
         ALLOWED_COMMANDS = {
@@ -146,9 +261,11 @@ class ChatBot:
         tools_node = ToolNode(tools=tools)
 
         builder = StateGraph(State)
+        builder.add_node("search_knowledge_base", search_knowledge_base)
         builder.add_node("chatbot", chatbot)
         builder.add_node("tools", tools_node)
-        builder.add_edge(START, "chatbot")
+        builder.add_edge(START, "search_knowledge_base")
+        builder.add_edge("search_knowledge_base", "chatbot")
         builder.add_conditional_edges(
             "chatbot",
             tools_condition,
