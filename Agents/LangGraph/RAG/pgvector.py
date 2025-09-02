@@ -235,29 +235,6 @@ async def main():
     result = await app.ainvoke(initial_state)
     print("Final response:", result["messages"][-1].content)
 
-# Database setup SQL
-"""
--- Enable pgvector extension
-CREATE EXTENSION IF NOT EXISTS vector;
-
--- Create documents table
-CREATE TABLE IF NOT EXISTS documents (
-    id TEXT PRIMARY KEY,
-    content TEXT NOT NULL,
-    metadata JSONB,
-    embedding vector(768),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Create index for faster vector similarity search
-CREATE INDEX IF NOT EXISTS documents_embedding_idx 
-ON documents USING hnsw (embedding vector_cosine_ops);
-
--- Create index on metadata for filtering
-CREATE INDEX IF NOT EXISTS documents_metadata_idx 
-ON documents USING gin (metadata);
-"""
-
 if __name__ == "__main__":
     import asyncio
     asyncio.run(main())
