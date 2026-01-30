@@ -1,4 +1,8 @@
 ```
+Enhance the existing ./CLAUDE.md file with following conventions: (1) follow the SOLID principles (2) Strictly implement with TDD (Test-Driven Development) (3) Use conventional commits (4) Do NOT add Claude as a co-author in commit messages (5) ensure all tests pass before committing
+```
+
+```
 Enhance the existing CLAUDE.md file with our team conventions:
 
 ## Code Conventions
