@@ -3,6 +3,11 @@ Enhance the existing ./CLAUDE.md file with following conventions: (1) follow the
 ```
 
 ```
+update the project memory ./CLAUDE.md, save the current progress, which allows you to resume in the next session.
+```
+
+
+```
 Enhance the existing CLAUDE.md file with our team conventions:
 
 ## Code Conventions
