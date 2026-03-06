@@ -1,9 +1,9 @@
 ```
-Enhance the existing ./CLAUDE.md file with following conventions: (1) follow the SOLID principles (2) Strictly implement with TDD (Test-Driven Development) (3) Use conventional commits (4) Do NOT add Claude as a co-author in commit messages (5) ensure all tests pass before committing (6) use context7 before using external crates to avoid hallucination
+Enhance the existing ./CLAUDE.md file with following conventions: (1) follow the SOLID principles (2) Strictly implement with TDD (Test-Driven Development) (3) Use conventional commits, keep the commit message concise and do git commit with -s (--signoff) (4) Do NOT add Claude as a co-author in commit messages (5) ensure all tests pass before committing (6) use context7 before using external crates to avoid hallucination
 ```
 
 ```
-update the project memory ./CLAUDE.md, save the current progress, which allows you to resume in the next session.
+update CLAUDE.md to save the current progress, make the file concise( keeping all essential info while removing verbose explanations and redundant information)
 ```
 
 
