@@ -1,5 +1,5 @@
 ```
-Enhance the existing ./CLAUDE.md file with following conventions: (1) follow the SOLID principles (2) Strictly implement with TDD (Test-Driven Development) (3) Use conventional commits, keep the commit message concise and do git commit with -s (--signoff) (4) Do NOT add Claude as a co-author in commit messages (5) ensure all tests pass before committing (6) use context7 before using external crates to avoid hallucination
+Enhance the existing ./CLAUDE.md file with following conventions: (1) follow the SOLID principles (2) Strictly implement with TDD (Test-Driven Development) (3) use context7 before using external crates to avoid hallucination (4) ensure all tests pass before committing (5) keep CLAUDE.md concise (6) Use conventional commits, keep the commit message concise and do git commit with -s (--signoff), Do NOT add Claude as a co-author in commit messages 
 ```
 
 ```
